@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'mvn-3-5-4'
+    }
+
+    environment {
+        DOCKER_USERNAME      = 'melbana'
+        IMAGE_NAME           = "${DOCKER_USERNAME}/declarative_app"
+        DOCKER_TOKEN_CREDS_ID = 'docker-hub-token'
+    }
+
+    stages {
+        stage("Checkout Code") {
+            steps {
+                git(
+                    branch: 'main',
+                    url: 'https://github.com/moelbana/jenkins_test.git',
+                )
+            }
+        }
+
+        stage("Build App") {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+
+        stage("Build Docker Image") {
+            steps {
+                sh "/usr/bin/docker build -t ${env.IMAGE_NAME}:${env.BUILD_NUMBER} ."
+            }
+        }
+
+        stage("Login & Push Docker Image") {
+            steps {
+                withCredentials([string(credentialsId: env.DOCKER_TOKEN_CREDS_ID, variable: 'DOCKER_ACCESS_TOKEN')]) {
+                    
+                    sh "echo ${DOCKER_ACCESS_TOKEN} | /usr/bin/docker login -u ${env.DOCKER_USERNAME} --password-stdin"
+                    
+                    sh "/usr/bin/docker push ${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo "Build & Push successful!"
+            echo "Docker image: ${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+        }
+        failure {
+            echo "Build failed!"
+        }
+    }
+}
